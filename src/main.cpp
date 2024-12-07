@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <EEPROM.h>
+
+#define EEPROM_SIZE 64
 
 // ROWS and COLS configuration
 const byte ROWS = 4;
@@ -28,10 +31,21 @@ bool enteringSpecialCode = false;
 
 String currentInput = "";
 
+char get_keyboard_key();
+void lockedState();
+void unlockedState();
+void signalizeWrongPassword();
+void signalizePasswordChange();
+void handleKey(char key);
+String readEEPROMString(int start, int len);
+void writeEEPROMString(int start, String value);
+
 void setup() {
+  Serial.begin(115200);
+
   for (int i = 0; i < ROWS; i++) {
     pinMode(rows[i], OUTPUT);
-    digitalWrite(rows[i], LOW);  // Set initial state to LOW
+    digitalWrite(rows[i], LOW);
   }
 
   for (int i = 0; i < COLS; i++) {
@@ -44,15 +58,18 @@ void setup() {
   digitalWrite(LOCK_PIN, HIGH);
   digitalWrite(UNLOCK_PIN, LOW);
 
-  Serial.begin(115200);
-}
+  EEPROM.begin(EEPROM_SIZE);
+  accessPassword = readEEPROMString(0, 16);
 
-char get_keyboard_key();
-void lockedState();
-void unlockedState();
-void signalizeWrongPassword();
-void signalizePasswordChange();
-void handleKey(char key);
+  Serial.println(String("Password from EEPROM: ") + accessPassword);
+
+  if (accessPassword == "") {
+    accessPassword = "1234";
+    writeEEPROMString(0, accessPassword);
+  }
+
+  Serial.println(String("Password: ") + accessPassword);
+}
 
 void loop() {
   if (unlocked && millis() - unlockedAt >= unlockDuration) {
@@ -103,14 +120,13 @@ void handleKey(char key) {
       String newPassword = currentInput.substring(6, 10);
       if (accessPassword != previousPassword) {
         signalizeWrongPassword();
-        currentInput = "";
-        enteringSpecialCode = false;
       } else {
         accessPassword = newPassword;
+        writeEEPROMString(0, accessPassword);
         signalizePasswordChange();
-        currentInput = "";
-        enteringSpecialCode = false;
       }
+      currentInput = "";
+      enteringSpecialCode = false;
     }
     return;
   }
@@ -125,6 +141,24 @@ void handleKey(char key) {
       signalizeWrongPassword();
     }
   }
+}
+
+String readEEPROMString(int start, int len) {
+  String result = "";
+  for (int i = start; i < start + len; i++) {
+    char c = EEPROM.read(i);
+    if (c == 0 || c == 255) break;
+    result += c;
+  }
+  return result;
+}
+
+void writeEEPROMString(int start, String value) {
+  for (int i = 0; i < value.length(); i++) {
+    EEPROM.write(start + i, value[i]);
+  }
+  EEPROM.write(start + value.length(), 0);
+  EEPROM.commit();
 }
 
 char get_keyboard_key() {
