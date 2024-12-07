@@ -23,6 +23,9 @@ int debounceDelay = 300;
 long lastKeyPressTime = 0;
 
 String accessPassword = "1234";
+
+bool enteringSpecialCode = false;
+
 String currentInput = "";
 
 void setup() {
@@ -47,7 +50,8 @@ void setup() {
 char get_keyboard_key();
 void lockedState();
 void unlockedState();
-void signalize_wrong_password();
+void signalizeWrongPassword();
+void signalizePasswordChange();
 void handleKey(char key);
 
 void loop() {
@@ -79,8 +83,37 @@ void unlockedState() {
 
 void handleKey(char key) {
   currentInput += key;
-  Serial.println(String("Input: ") + currentInput);
-  Serial.println(String("Input length: ") + currentInput.length());
+
+  if (key == '#' && enteringSpecialCode == false) {
+    // format: #1234*5678
+    enteringSpecialCode = true;
+    Serial.println(String("Entering special code..."));
+    return;
+  }
+
+  if (enteringSpecialCode) {
+    if (currentInput.length() == 6) {
+      if (key != '*') {
+        signalizeWrongPassword();
+        currentInput = "";
+        enteringSpecialCode = false;
+      }
+    } else if (currentInput.length() == 10) {
+      String previousPassword = currentInput.substring(1, 5);
+      String newPassword = currentInput.substring(6, 10);
+      if (accessPassword != previousPassword) {
+        signalizeWrongPassword();
+        currentInput = "";
+        enteringSpecialCode = false;
+      } else {
+        accessPassword = newPassword;
+        signalizePasswordChange();
+        currentInput = "";
+        enteringSpecialCode = false;
+      }
+    }
+    return;
+  }
 
   if (currentInput.length() == PASSWORD_LENGTH) {
     if (currentInput == accessPassword) {
@@ -89,7 +122,7 @@ void handleKey(char key) {
     } else {
       Serial.println(String("Invalid password"));
       currentInput = "";
-      signalize_wrong_password();
+      signalizeWrongPassword();
     }
   }
 }
@@ -113,11 +146,20 @@ char get_keyboard_key() {
   return '\0';
 }
 
-void signalize_wrong_password() {
+void signalizeWrongPassword() {
   for (int i = 0; i < 4; i++) {
     digitalWrite(LOCK_PIN, LOW);
     delay(200);
     digitalWrite(LOCK_PIN, HIGH);
+    delay(200);
+  }
+}
+
+void signalizePasswordChange() {
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(UNLOCK_PIN, HIGH);
+    delay(200);
+    digitalWrite(UNLOCK_PIN, LOW);
     delay(200);
   }
 }
