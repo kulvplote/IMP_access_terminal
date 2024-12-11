@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IMP Access Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 flex justify-center items-center h-screen">
+    <div class="bg-white shadow-md rounded-lg p-8 w-[min(500px,95%)]">
+      <h1 class="text-2xl font-bold mb-4 text-center">IMP Access Terminal</h1>
+
+      <button
+        id="connectBtn"
+        class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
+      >
+        Connect to terminal
+      </button>
+
+      <div
+        id="statusDiv"
+        class="mt-4 p-4 bg-gray-200 rounded text-gray-700 flex items-center justify-between"
+      >
+        <div id="status">
+          <p><strong>Status:</strong> Disconnected</p>
+        </div>
+        <div id="lockedStatus"></div>
+      </div>
+
+      <div
+        id="data"
+        class="mt-4 hidden p-4 bg-green-100 rounded text-green-700"
+      >
+        <p>
+          <strong>ESP32 Data:</strong>
+          <span id="espData">No data received yet.</span>
+        </p>
+      </div>
+      <div
+        id="terminalForm"
+        class="mt-4 hidden p-4 bg-blue-100 rounded text-blue-700"
+      >
+        <h2 class="text-lg font-semibold mb-2">Modify Settings</h2>
+        <form id="settingsForm">
+          <div class="mb-4">
+            <label for="unlockDuration" class="block mb-1"
+              >Unlock Duration (ms):</label
+            >
+            <input
+              type="number"
+              id="unlockDuration"
+              name="unlockDuration"
+              class="w-full border rounded p-2"
+            />
+          </div>
+          <div class="mb-4">
+            <label for="password" class="block mb-1"
+              >New Password (4 digits):</label
+            >
+            <input
+              type="password"
+              id="password"
+              name="password"
+              class="w-full border rounded p-2"
+            />
+          </div>
+          <button
+            type="submit"
+            class="w-full bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
+          >
+            Update Settings
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const connectBtn = document.getElementById("connectBtn");
+      const statusDiv = document.getElementById("statusDiv");
+      const status = document.getElementById("status");
+      const dataDiv = document.getElementById("data");
+      const espData = document.getElementById("espData");
+      const lockedStatus = document.getElementById("lockedStatus");
+
+      const unlockForm = document.getElementById("terminalForm");
+      const settingsForm = document.getElementById("settingsForm");
+      const unlockDurationInput = document.getElementById("unlockDuration");
+      const passwordInput = document.getElementById("password");
+
+      let device;
+      let server;
+      let characteristic;
+
+      connectBtn.addEventListener("click", async () => {
+        try {
+          status.innerHTML = "<p><strong>Status:</strong> Connecting...</p>";
+
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: ["4fafc201-1fb5-459e-8fcc-c5c9c331914b"],
+          });
+
+          server = await device.gatt.connect();
+
+          connectBtn.classList.add("hidden");
+
+          status.innerHTML = "<p><strong>Status:</strong> Connected</p>";
+          statusDiv.classList.remove("bg-gray-200", "text-gray-700");
+          statusDiv.classList.add("bg-green-100", "text-green-700");
+
+          const service = await server.getPrimaryService(
+            "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+          );
+          characteristic = await service.getCharacteristic(
+            "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+          );
+
+          // Listen for changes
+          characteristic.startNotifications();
+          characteristic.addEventListener(
+            "characteristicvaluechanged",
+            (event) => {
+              const decoder = new TextDecoder("utf-8");
+              const value = JSON.parse(decoder.decode(event.target.value));
+              updateESPData(value);
+            }
+          );
+        } catch (error) {
+          console.error(error);
+          statusDiv.innerHTML = `<p><strong>Status:</strong> Error - ${error.message}</p>`;
+        }
+      });
+
+      function updateESPData(value) {
+        dataDiv.classList.remove("hidden");
+        espData.textContent = `State: ${JSON.stringify(value)}`;
+
+        lockedStatus.innerHTML = value.unlocked
+          ? "<p class='text-green-700 font-bold'>Unlocked</p>"
+          : "<p class='text-red-500 font-bold'>Locked</p>";
+
+        if (value.unlocked) {
+          unlockForm.classList.remove("hidden");
+          if (!unlockDurationInput.value) {
+            unlockDurationInput.value = value.unlock_duration;
+          }
+        } else {
+          unlockForm.classList.add("hidden");
+        }
+      }
+
+      settingsForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (characteristic) {
+          try {
+            const newSettings = {
+              unlock_duration: parseInt(unlockDurationInput.value, 10),
+              password: parseInt(passwordInput.value),
+            };
+
+            console.log(newSettings);
+
+            if (
+              !isNaN(newSettings.password) &&
+              (newSettings.password < 1000 || newSettings.password > 9999)
+            ) {
+              throw new Error(
+                "Password must 4 characters long and must consist only of digits"
+              );
+            }
+
+            const encoder = new TextEncoder();
+            const jsonSettings = JSON.stringify(newSettings);
+            await characteristic.writeValue(encoder.encode(jsonSettings));
+            unlockDurationInput.value = null;
+            passwordInput.value = null;
+          } catch (error) {
+            alert(error.message);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
