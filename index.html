@@ -97,7 +97,7 @@
 
           device = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            optionalServices: ["4fafc201-1fb5-459e-8fcc-c5c9c331914b"],
+            optionalServices: ["ce329a3c-b829-42a8-9739-b2c160c3497b"],
           });
 
           server = await device.gatt.connect();
@@ -109,11 +109,13 @@
           statusDiv.classList.add("bg-green-100", "text-green-700");
 
           const service = await server.getPrimaryService(
-            "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+            "ce329a3c-b829-42a8-9739-b2c160c3497b"
           );
           characteristic = await service.getCharacteristic(
-            "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+            "d769bc0a-00f3-481c-8fb7-93dd37d0c3c4"
           );
+
+          device.addEventListener("gattserverdisconnected", onDisconnected);
 
           // Listen for changes
           characteristic.startNotifications();
@@ -149,6 +151,16 @@
         }
       }
 
+      function onDisconnected() {
+        connectBtn.classList.remove("hidden");
+        status.innerHTML = "<p><strong>Status:</strong> Disconnected</p>";
+        statusDiv.classList.add("bg-gray-200", "text-gray-700");
+        statusDiv.classList.remove("bg-green-100", "text-green-700");
+        dataDiv.classList.add("hidden");
+        unlockForm.classList.add("hidden");
+        lockedStatus.innerHTML = "";
+      }
+
       settingsForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (characteristic) {
@@ -157,8 +169,6 @@
               unlock_duration: parseInt(unlockDurationInput.value, 10),
               password: parseInt(passwordInput.value),
             };
-
-            console.log(newSettings);
 
             if (
               !isNaN(newSettings.password) &&
@@ -169,8 +179,17 @@
               );
             }
 
+            if (newSettings.unlock_duration <= 0) {
+              throw new Error("Unlock duration must be positive number");
+            }
+
             const encoder = new TextEncoder();
-            const jsonSettings = JSON.stringify(newSettings);
+            const jsonSettings = JSON.stringify({
+              ...newSettings,
+              password: isNaN(newSettings.password)
+                ? null
+                : newSettings.password.toString(),
+            });
             await characteristic.writeValue(encoder.encode(jsonSettings));
             unlockDurationInput.value = null;
             passwordInput.value = null;
